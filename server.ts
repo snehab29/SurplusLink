@@ -22,10 +22,12 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    contact TEXT NOT NULL,
+    org_name TEXT NOT NULL,
+    contact TEXT,
+    email TEXT UNIQUE,
     address TEXT NOT NULL,
     zone TEXT NOT NULL,
-    password_hash TEXT NOT NULL,
+    password_hash TEXT,
     role TEXT NOT NULL CHECK(role IN ('restaurant', 'ngo', 'admin')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -56,6 +58,21 @@ db.exec(`
     FOREIGN KEY (ngo_id) REFERENCES users(id)
   );
 `);
+
+// Migration for existing databases
+try {
+  db.exec("ALTER TABLE users ADD COLUMN email TEXT");
+} catch (e) {}
+try {
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)");
+} catch (e) {}
+try {
+  db.exec("ALTER TABLE users ADD COLUMN org_name TEXT");
+} catch (e) {}
+try {
+  // Set default org_name for existing users to their name if it's null
+  db.exec("UPDATE users SET org_name = name WHERE org_name IS NULL");
+} catch (e) {}
 
 async function startServer() {
   const app = express();
@@ -89,12 +106,12 @@ async function startServer() {
 
   // Auth
   app.post("/api/auth/register", async (req, res) => {
-    const { name, contact, address, zone, password, role } = req.body;
+    const { name, orgName, contact, email, address, zone, password, role } = req.body;
     try {
-      const hash = await bcrypt.hash(password, 10);
+      const hash = password ? await bcrypt.hash(password, 10) : null;
       const result = db.prepare(
-        "INSERT INTO users (name, contact, address, zone, password_hash, role) VALUES (?, ?, ?, ?, ?, ?)"
-      ).run(name, contact, address, zone, hash, role);
+        "INSERT INTO users (name, org_name, contact, email, address, zone, password_hash, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      ).run(name, orgName, contact || null, email || null, address, zone, hash, role);
       res.json({ id: result.lastInsertRowid });
     } catch (err: any) {
       res.status(400).json({ error: err.message });
@@ -102,19 +119,25 @@ async function startServer() {
   });
 
   app.post("/api/auth/login", async (req, res) => {
-    const { contact, password } = req.body;
-    const user: any = db.prepare("SELECT * FROM users WHERE contact = ?").get(contact);
-    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+    const { contact, email, password } = req.body;
+    let user: any;
+    if (contact) {
+      user = db.prepare("SELECT * FROM users WHERE contact = ?").get(contact);
+    } else if (email) {
+      user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
+    }
+
+    if (!user || !user.password_hash || !(await bcrypt.compare(password, user.password_hash))) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
-    const token = jwt.sign({ id: user.id, role: user.role, name: user.name, zone: user.zone }, JWT_SECRET, { expiresIn: "24h" });
+    const token = jwt.sign({ id: user.id, role: user.role, name: user.name, orgName: user.org_name, zone: user.zone }, JWT_SECRET, { expiresIn: "24h" });
     res.cookie("token", token, { 
       httpOnly: true, 
       sameSite: "none", 
       secure: true,
       path: '/'
     });
-    res.json({ id: user.id, role: user.role, name: user.name, zone: user.zone, token });
+    res.json({ id: user.id, role: user.role, name: user.name, orgName: user.org_name, zone: user.zone, token });
   });
 
   app.post("/api/auth/logout", (req, res) => {
@@ -156,7 +179,7 @@ async function startServer() {
     db.prepare("UPDATE listings SET status = 'EXPIRED' WHERE status = 'ACTIVE' AND expiry_time < ?").run(new Date().toISOString());
 
     const { zone, sort } = req.query;
-    let query = "SELECT l.*, u.name as restaurant_name FROM listings l JOIN users u ON l.restaurant_id = u.id WHERE l.status = 'ACTIVE'";
+    let query = "SELECT l.*, u.org_name as restaurant_name FROM listings l JOIN users u ON l.restaurant_id = u.id WHERE l.status = 'ACTIVE'";
     const params: any[] = [];
 
     if (zone) {
@@ -176,7 +199,7 @@ async function startServer() {
   app.get("/api/listings/my", authenticate, (req: any, res) => {
     if (req.user.role !== 'restaurant') return res.status(403).json({ error: "Forbidden" });
     const listings = db.prepare(`
-      SELECT l.*, u.name as restaurant_name 
+      SELECT l.*, u.org_name as restaurant_name 
       FROM listings l 
       JOIN users u ON l.restaurant_id = u.id 
       WHERE l.restaurant_id = ? 
@@ -214,7 +237,7 @@ async function startServer() {
   app.get("/api/claims/my", authenticate, (req: any, res) => {
     if (req.user.role !== 'ngo') return res.status(403).json({ error: "Forbidden" });
     const claims = db.prepare(`
-      SELECT c.*, l.food_description, l.zone, u.name as restaurant_name 
+      SELECT c.*, l.food_description, l.zone, u.org_name as restaurant_name 
       FROM claims c 
       JOIN listings l ON c.listing_id = l.id 
       JOIN users u ON l.restaurant_id = u.id 
@@ -226,7 +249,7 @@ async function startServer() {
 
   app.get("/api/claims/listing/:id", authenticate, (req: any, res) => {
     const claims = db.prepare(`
-      SELECT c.*, u.name as ngo_name, u.contact as ngo_contact 
+      SELECT c.*, u.org_name as ngo_name, u.contact as ngo_contact 
       FROM claims c 
       JOIN users u ON c.ngo_id = u.id 
       WHERE c.listing_id = ?

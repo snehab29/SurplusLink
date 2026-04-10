@@ -3,7 +3,9 @@ export type UserRole = 'restaurant' | 'ngo' | 'admin';
 export interface User {
   id: number;
   name: string;
-  contact: string;
+  orgName: string;
+  contact?: string;
+  email?: string;
   address: string;
   zone: string;
   role: UserRole;

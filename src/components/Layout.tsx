@@ -40,7 +40,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </div>
               <div className="h-6 w-px bg-slate-200" />
               <div className="text-sm text-slate-500">
-                {user?.name} ({user?.zone})
+                {user?.orgName} ({user?.zone})
               </div>
               <button
                 onClick={handleLogout}
@@ -73,7 +73,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 {user?.role === 'admin' && <ShieldCheck className="w-5 h-5 text-emerald-600" />}
               </div>
               <div>
-                <div className="font-bold text-slate-900">{user?.name}</div>
+                <div className="font-bold text-slate-900">{user?.orgName}</div>
                 <div className="text-xs text-slate-500 capitalize">{user?.role} • {user?.zone}</div>
               </div>
             </div>

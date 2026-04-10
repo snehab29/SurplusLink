@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../App';
 import { ZONES, UserRole } from '../types';
-import { Utensils, Heart, ShieldCheck, ArrowRight, Loader2 } from 'lucide-react';
+import { Utensils, Heart, ShieldCheck, ArrowRight, Loader2, Mail, Phone } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { apiFetch } from '../lib/api';
 
@@ -11,10 +11,13 @@ export function Auth() {
   const [role, setRole] = useState<UserRole>('restaurant');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [authMethod, setAuthMethod] = useState<'contact' | 'email'>('contact');
 
   const [formData, setFormData] = useState({
     name: '',
+    orgName: '',
     contact: '',
+    email: '',
     address: '',
     zone: ZONES[0],
     password: '',
@@ -27,8 +30,15 @@ export function Auth() {
 
     const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
     const body = isLogin 
-      ? { contact: formData.contact, password: formData.password }
-      : { ...formData, role };
+      ? { 
+          contact: authMethod === 'contact' ? formData.contact : undefined, 
+          email: authMethod === 'email' ? formData.email : undefined, 
+          password: formData.password 
+        }
+      : { 
+          ...formData, 
+          role
+        };
 
     try {
       const res = await apiFetch(endpoint, {
@@ -113,14 +123,28 @@ export function Auth() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">Full Name</label>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">Contact Person Name</label>
                     <input
                       type="text"
                       required
                       value={formData.name}
                       onChange={e => setFormData({ ...formData, name: e.target.value })}
                       className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
-                      placeholder="e.g. Royal Sweets"
+                      placeholder="e.g. Rahul Sharma"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">
+                      {role === 'restaurant' ? 'Restaurant Name' : 'NGO Name'}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.orgName}
+                      onChange={e => setFormData({ ...formData, orgName: e.target.value })}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+                      placeholder={role === 'restaurant' ? 'e.g. Royal Sweets' : 'e.g. Helping Hands'}
                     />
                   </div>
 
@@ -151,15 +175,37 @@ export function Auth() {
             </AnimatePresence>
 
             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">Contact Number</label>
-              <input
-                type="tel"
-                required
-                value={formData.contact}
-                onChange={e => setFormData({ ...formData, contact: e.target.value })}
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
-                placeholder="10-digit mobile number"
-              />
+              <div className="flex items-center justify-between mb-1.5 ml-1">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  {authMethod === 'contact' ? 'Contact Number' : 'Email Address'}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setAuthMethod(authMethod === 'contact' ? 'email' : 'contact')}
+                  className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 uppercase tracking-tight"
+                >
+                  Use {authMethod === 'contact' ? 'Email' : 'Phone'} instead
+                </button>
+              </div>
+              {authMethod === 'contact' ? (
+                <input
+                  type="tel"
+                  required
+                  value={formData.contact}
+                  onChange={e => setFormData({ ...formData, contact: e.target.value })}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+                  placeholder="10-digit mobile number"
+                />
+              ) : (
+                <input
+                  type="email"
+                  required
+                  value={formData.email}
+                  onChange={e => setFormData({ ...formData, email: e.target.value })}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+                  placeholder="name@example.com"
+                />
+              )}
             </div>
 
             <div>
