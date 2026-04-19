@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Listing } from '../types';
 import { Clock, MapPin, Utensils, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn, formatToIST } from '../lib/utils';
 import { motion } from 'motion/react';
 
 interface ListingCardProps {
@@ -34,7 +34,7 @@ export function ListingCard({ listing, onClaim, showClaimButton }: ListingCardPr
     return () => clearInterval(interval);
   }, [listing.expiry_time]);
 
-  const isExpired = listing.status === 'EXPIRED' || timeLeft === 'Expired';
+  const isExpired = listing.status === 'EXPIRED' || listing.status === 'REMOVED' || timeLeft === 'Expired';
 
   return (
     <motion.div
@@ -55,9 +55,15 @@ export function ListingCard({ listing, onClaim, showClaimButton }: ListingCardPr
               </span>
               <span className={cn(
                 "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                isExpired ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"
+                listing.status === 'EXPIRED' ? "bg-slate-100 text-slate-600" :
+                listing.status === 'REMOVED' ? "bg-rose-100 text-rose-700" :
+                listing.status === 'EDITED' ? "bg-blue-100 text-blue-700" :
+                "bg-emerald-100 text-emerald-700"
               )}>
-                {isExpired ? 'Expired' : 'Active'}
+                {listing.status === 'ACTIVE' && timeLeft === 'Expired' ? 'Expired' : listing.status}
+              </span>
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 uppercase tracking-wider">
+                {listing.category?.replace('_', ' ') || 'NORMAL'}
               </span>
             </div>
           </div>
@@ -83,7 +89,7 @@ export function ListingCard({ listing, onClaim, showClaimButton }: ListingCardPr
             <AlertCircle className="w-4 h-4 text-emerald-500" />
             <div className="text-xs">
               <div className="font-bold text-slate-700">
-                {new Date(listing.expiry_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                {formatToIST(listing.expiry_time)}
               </div>
               <div className="text-[10px] uppercase font-medium">Deadline</div>
             </div>
@@ -92,7 +98,7 @@ export function ListingCard({ listing, onClaim, showClaimButton }: ListingCardPr
             <Utensils className="w-4 h-4 text-emerald-500" />
             <div className="text-xs">
               <div className="font-bold text-slate-700">
-                {new Date(listing.cooked_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                {formatToIST(listing.cooked_time)}
               </div>
               <div className="text-[10px] uppercase font-medium">Cooked</div>
             </div>

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Listing, Claim, ZONES } from '../types';
-import { Search, Filter, Clock, CheckCircle2, Loader2, Heart, MapPin, Utensils } from 'lucide-react';
+import { Search, Filter, Clock, CheckCircle2, Loader2, Heart, MapPin, Utensils, AlertCircle } from 'lucide-react';
 import { ListingCard } from './ListingCard';
 import { motion, AnimatePresence } from 'motion/react';
 import { apiFetch } from '../lib/api';
+import { formatDateTimeToIST, formatToIST } from '../lib/utils';
 
 export function NGODashboard() {
   const [listings, setListings] = useState<Listing[]>([]);
@@ -15,21 +16,41 @@ export function NGODashboard() {
   const [claimAmount, setClaimAmount] = useState(1);
   const [claiming, setClaiming] = useState(false);
   const [activeTab, setActiveTab] = useState<'browse' | 'my-claims'>('browse');
+  const [error, setError] = useState('');
 
   const fetchData = async () => {
     setLoading(true);
-    const [listingsRes, claimsRes] = await Promise.all([
-      apiFetch(`/api/listings?zone=${filterZone}&sort=${sortBy}`),
-      apiFetch('/api/claims/my')
-    ]);
-    const [listingsData, claimsData] = await Promise.all([
-      listingsRes.json(),
-      claimsRes.json()
-    ]);
-    
-    setListings(Array.isArray(listingsData) ? listingsData : []);
-    setMyClaims(Array.isArray(claimsData) ? claimsData : []);
-    setLoading(false);
+    setError('');
+    try {
+      const [listingsRes, claimsRes] = await Promise.all([
+        apiFetch(`/api/listings?zone=${encodeURIComponent(filterZone)}&sort=${sortBy}`),
+        apiFetch('/api/claims/my')
+      ]);
+      
+      if (!listingsRes.ok) {
+        const errData = await listingsRes.json();
+        throw new Error(errData.error || 'Failed to fetch listings');
+      }
+      if (!claimsRes.ok) {
+        const errData = await claimsRes.json();
+        throw new Error(errData.error || 'Failed to fetch claims');
+      }
+
+      const [listingsData, claimsData] = await Promise.all([
+        listingsRes.json(),
+        claimsRes.json()
+      ]);
+      
+      console.log('NGO Dashboard Data:', { listings: listingsData, claims: claimsData });
+      
+      setListings(Array.isArray(listingsData) ? listingsData : []);
+      setMyClaims(Array.isArray(claimsData) ? claimsData.filter((c: any) => c.status !== 'CANCELLED') : []);
+    } catch (err: any) {
+      console.error('NGO Dashboard Fetch Error:', err);
+      setError(err.message || 'An unexpected error occurred');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -70,6 +91,21 @@ export function NGODashboard() {
     if (res.ok) fetchData();
   };
 
+  const cancelClaim = async (claimId: number) => {
+    if (!confirm("Are you sure you want to cancel this claim?")) return;
+    try {
+      const res = await apiFetch(`/api/claims/${claimId}/cancel`, { method: 'POST' });
+      if (res.ok) {
+        fetchData();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to cancel claim");
+      }
+    } catch (err) {
+      console.error('Failed to cancel claim:', err);
+    }
+  };
+
   if (loading && listings.length === 0) return <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-emerald-600" /></div>;
 
   return (
@@ -94,6 +130,13 @@ export function NGODashboard() {
           </button>
         </div>
       </div>
+
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 font-medium flex items-center gap-3">
+          <AlertCircle className="w-5 h-5" />
+          {error}
+        </div>
+      )}
 
       {activeTab === 'browse' ? (
         <div className="space-y-6">
@@ -169,15 +212,22 @@ export function NGODashboard() {
                 <p className="text-slate-600 text-sm mb-4 italic">"{claim.food_description}"</p>
                 <div className="flex items-center gap-2 text-xs text-slate-500 mb-6">
                   <Clock className="w-3.5 h-3.5" />
-                  Claimed on {new Date(claim.created_at).toLocaleDateString()} at {new Date(claim.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  Claimed: {formatDateTimeToIST(claim.created_at)}
                 </div>
               </div>
 
               <div className="flex items-center justify-between pt-4 border-t border-slate-100">
                 {claim.status === 'COMPLETED' ? (
-                  <div className="flex items-center gap-2 text-emerald-600 font-bold text-sm">
-                    <CheckCircle2 className="w-5 h-5" />
-                    Picked Up
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-2 text-emerald-600 font-bold text-sm">
+                      <CheckCircle2 className="w-5 h-5" />
+                      Picked Up
+                    </div>
+                    {claim.pickup_time && (
+                      <div className="text-[10px] text-slate-400 mt-1 ml-7 italic">
+                        at {formatToIST(claim.pickup_time)}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <>
@@ -185,12 +235,20 @@ export function NGODashboard() {
                       <Clock className="w-5 h-5" />
                       Pending Pickup
                     </div>
-                    <button
-                      onClick={() => confirmPickup(claim.id)}
-                      className="px-4 py-2 bg-slate-900 text-white text-xs font-bold rounded-lg hover:bg-slate-800 transition-colors"
-                    >
-                      Confirm Pickup
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => cancelClaim(claim.id)}
+                        className="px-3 py-2 text-rose-600 hover:bg-rose-50 text-xs font-bold rounded-lg transition-colors border border-transparent hover:border-rose-100"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => confirmPickup(claim.id)}
+                        className="px-4 py-2 bg-slate-900 text-white text-xs font-bold rounded-lg hover:bg-slate-800 transition-colors"
+                      >
+                        Confirm Pickup
+                      </button>
+                    </div>
                   </>
                 )}
               </div>

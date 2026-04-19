@@ -23,6 +23,20 @@ export function Auth() {
     password: '',
   });
 
+  const toggleMode = () => {
+    setIsLogin(!isLogin);
+    setError('');
+    setFormData({
+      name: '',
+      orgName: '',
+      contact: '',
+      email: '',
+      address: '',
+      zone: ZONES[0],
+      password: '',
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -55,6 +69,7 @@ export function Auth() {
       } else {
         setIsLogin(true);
         setError('Registration successful! Please login.');
+        setFormData(prev => ({ ...prev, password: '' })); // Keep contact/email but clear password
       }
     } catch (err: any) {
       setError(err.message);
@@ -81,13 +96,13 @@ export function Auth() {
         <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
           <div className="flex border-b border-slate-100">
             <button
-              onClick={() => setIsLogin(true)}
+              onClick={() => !isLogin && toggleMode()}
               className={`flex-1 py-4 text-sm font-bold transition-colors ${isLogin ? 'text-emerald-600 border-b-2 border-emerald-600' : 'text-slate-400 hover:text-slate-600'}`}
             >
               Login
             </button>
             <button
-              onClick={() => setIsLogin(false)}
+              onClick={() => isLogin && toggleMode()}
               className={`flex-1 py-4 text-sm font-bold transition-colors ${!isLogin ? 'text-emerald-600 border-b-2 border-emerald-600' : 'text-slate-400 hover:text-slate-600'}`}
             >
               Register

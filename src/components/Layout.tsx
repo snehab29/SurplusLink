@@ -1,18 +1,14 @@
 import React from 'react';
 import { useAuth } from '../App';
-import { LogOut, Utensils, Heart, ShieldCheck, Menu, X } from 'lucide-react';
+import { Utensils, Heart, ShieldCheck, Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '../lib/utils';
+import { ProfileMenu } from './ProfileMenu';
+import { NotificationCenter } from './NotificationCenter';
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  const { user, setUser } = useAuth();
+  const { user } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-
-  const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
-    localStorage.removeItem('surplus_token');
-    setUser(null);
-  };
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -31,28 +27,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Desktop Nav */}
-            <div className="hidden md:flex items-center gap-6">
-              <div className="flex items-center gap-2 text-slate-600 font-medium">
-                {user?.role === 'restaurant' && <Utensils className="w-4 h-4" />}
-                {user?.role === 'ngo' && <Heart className="w-4 h-4" />}
-                {user?.role === 'admin' && <ShieldCheck className="w-4 h-4" />}
-                <span className="capitalize">{user?.role}</span>
+              <div className="hidden md:flex items-center gap-4">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-lg text-slate-600 font-bold text-xs uppercase tracking-wider">
+                  {user?.role === 'restaurant' && <Utensils className="w-3.5 h-3.5 text-emerald-600" />}
+                  {user?.role === 'ngo' && <Heart className="w-3.5 h-3.5 text-rose-600" />}
+                  {user?.role === 'admin' && <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />}
+                  <span>{user?.role}</span>
+                </div>
+                <div className="h-8 w-px bg-slate-200 mx-2" />
+                <NotificationCenter />
+                <ProfileMenu />
               </div>
-              <div className="h-6 w-px bg-slate-200" />
-              <div className="text-sm text-slate-500">
-                {user?.orgName} ({user?.zone})
-              </div>
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
-              >
-                <LogOut className="w-4 h-4" />
-                Logout
-              </button>
-            </div>
 
             {/* Mobile Menu Button */}
-            <div className="md:hidden flex items-center">
+            <div className="md:hidden flex items-center gap-2">
+              <NotificationCenter />
               <button
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
                 className="p-2 rounded-lg text-slate-600 hover:bg-slate-100"
@@ -64,26 +53,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Mobile Nav */}
-        <div className={cn("md:hidden border-t border-slate-100 bg-white", isMenuOpen ? "block" : "hidden")}>
-          <div className="px-4 pt-2 pb-6 space-y-4">
-            <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
-              <div className="bg-emerald-100 p-2 rounded-lg">
-                {user?.role === 'restaurant' && <Utensils className="w-5 h-5 text-emerald-600" />}
-                {user?.role === 'ngo' && <Heart className="w-5 h-5 text-emerald-600" />}
-                {user?.role === 'admin' && <ShieldCheck className="w-5 h-5 text-emerald-600" />}
-              </div>
-              <div>
-                <div className="font-bold text-slate-900">{user?.orgName}</div>
-                <div className="text-xs text-slate-500 capitalize">{user?.role} • {user?.zone}</div>
-              </div>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-white bg-slate-900 rounded-xl hover:bg-slate-800 transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-              Logout
-            </button>
+        <div className={cn("md:hidden border-t border-slate-100 bg-white shadow-lg", isMenuOpen ? "block" : "hidden")}>
+          <div className="px-4 pt-2 pb-6">
+            <ProfileMenu />
           </div>
         </div>
       </nav>

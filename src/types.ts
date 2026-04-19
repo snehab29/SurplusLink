@@ -17,11 +17,12 @@ export interface Listing {
   restaurant_name?: string;
   zone: string;
   food_description: string;
+  category: 'NORMAL' | 'BAKERY_SWEETS';
   total_meals: number;
   meals_remaining: number;
   cooked_time: string;
   expiry_time: string;
-  status: 'ACTIVE' | 'EXPIRED';
+  status: 'ACTIVE' | 'EXPIRED' | 'REMOVED' | 'EDITED';
   created_at: string;
 }
 
@@ -32,12 +33,22 @@ export interface Claim {
   ngo_name?: string;
   ngo_contact?: string;
   meals_claimed: number;
-  status: 'PENDING' | 'COMPLETED';
+  status: 'PENDING' | 'COMPLETED' | 'CANCELLED';
   pickup_time: string | null;
   created_at: string;
   food_description?: string;
   zone?: string;
   restaurant_name?: string;
+}
+
+export interface Notification {
+  id: number;
+  user_id: number;
+  type: 'CLAIM' | 'EXPIRY_WARNING';
+  message: string;
+  related_id: number;
+  is_read: boolean;
+  created_at: string;
 }
 
 export const ZONES = [

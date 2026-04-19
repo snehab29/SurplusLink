@@ -52,9 +52,9 @@ export default function App() {
         <Auth />
       ) : (
         <Layout>
-          {user.role === 'restaurant' && <RestaurantDashboard />}
-          {user.role === 'ngo' && <NGODashboard />}
-          {user.role === 'admin' && <AdminDashboard />}
+          {user.role === 'restaurant' && <RestaurantDashboard key={user.id} />}
+          {user.role === 'ngo' && <NGODashboard key={user.id} />}
+          {user.role === 'admin' && <AdminDashboard key={user.id} />}
         </Layout>
       )}
     </AuthContext.Provider>
