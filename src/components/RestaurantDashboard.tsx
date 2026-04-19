@@ -152,16 +152,33 @@ export function RestaurantDashboard() {
 
   const handleRemoveListing = async (listingId: number) => {
     if (!confirm("Are you sure you want to remove this listing? It will no longer be available for NGOs.")) return;
+    
+    // Save original state for rollback if needed
+    const lastListings = [...listings];
+
+    // Optimistic update: mark as removed locally
+    setListings(current => current.map(l => 
+      l.id === listingId ? { ...l, status: 'REMOVED' } : l
+    ));
+
     try {
       const res = await apiFetch(`/api/listings/${listingId}`, { method: 'DELETE' });
-      if (res.ok) {
-        fetchListings();
-      } else {
+      
+      if (!res.ok) {
+        // Rollback on error
+        setListings(lastListings);
         const data = await res.json();
         alert(data.error || "Failed to remove listing");
+        return; // Don't re-fetch yet if we just restored state
       }
+      
+      // Successfully removed. Re-fetch but keep the UI response snappy.
+      // Re-fetching ensures we have the latest data for other listings (like new claims).
+      fetchListings();
     } catch (err) {
       console.error('Remove error:', err);
+      setListings(lastListings); // Rollback
+      alert("Network error. Could not remove listing.");
     }
   };
 
@@ -340,7 +357,7 @@ export function RestaurantDashboard() {
                 Claims
                 <ChevronRight className="w-3 h-3" />
               </button>
-              {listing.status === 'ACTIVE' && (
+              {(listing.status === 'ACTIVE' || listing.status === 'EDITED') && (
                 <>
                   <button
                     onClick={() => startEditing(listing)}

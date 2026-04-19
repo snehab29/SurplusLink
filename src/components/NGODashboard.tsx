@@ -93,16 +93,22 @@ export function NGODashboard() {
 
   const cancelClaim = async (claimId: number) => {
     if (!confirm("Are you sure you want to cancel this claim?")) return;
+    
+    // Optimistic update
+    setMyClaims(current => current.filter(c => c.id !== claimId));
+
     try {
       const res = await apiFetch(`/api/claims/${claimId}/cancel`, { method: 'POST' });
       if (res.ok) {
         fetchData();
       } else {
+        fetchData(); // Rollback
         const data = await res.json();
         alert(data.error || "Failed to cancel claim");
       }
     } catch (err) {
       console.error('Failed to cancel claim:', err);
+      fetchData(); // Rollback
     }
   };
 

@@ -92,6 +92,110 @@ try {
   db.exec("ALTER TABLE listings ADD COLUMN category TEXT DEFAULT 'NORMAL'");
 } catch (e) {}
 
+// Migration for listings status constraint
+try {
+  // Check if the current schema supports 'REMOVED' status
+  let migrationNeeded = false;
+  try {
+    db.exec(`
+      INSERT INTO listings (id, restaurant_id, zone, food_description, total_meals, meals_remaining, cooked_time, expiry_time, status) 
+      VALUES (-999, 0, 'TEMP', 'TEMP', 0, 0, '2026-01-01', '2026-01-01', 'REMOVED')
+    `);
+    db.exec("DELETE FROM listings WHERE id = -999");
+  } catch (err: any) {
+    if (err.message.includes("CHECK constraint failed")) {
+      migrationNeeded = true;
+    }
+  }
+
+  if (migrationNeeded) {
+    console.log("Migrating listings table to update status constraint...");
+    db.exec("PRAGMA foreign_keys = OFF");
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE listings_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          restaurant_id INTEGER NOT NULL,
+          zone TEXT NOT NULL,
+          food_description TEXT NOT NULL,
+          category TEXT DEFAULT 'NORMAL',
+          total_meals INTEGER NOT NULL,
+          meals_remaining INTEGER NOT NULL,
+          cooked_time DATETIME NOT NULL,
+          expiry_time DATETIME NOT NULL,
+          status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(status IN ('ACTIVE', 'EXPIRED', 'REMOVED', 'EDITED')),
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (restaurant_id) REFERENCES users(id)
+        );
+      `);
+      
+      // Copy data, ensuring category exists
+      db.exec(`
+        INSERT INTO listings_new (id, restaurant_id, zone, food_description, category, total_meals, meals_remaining, cooked_time, expiry_time, status, created_at)
+        SELECT id, restaurant_id, zone, food_description, COALESCE(category, 'NORMAL'), total_meals, meals_remaining, cooked_time, expiry_time, status, created_at 
+        FROM listings;
+      `);
+      
+      db.exec("DROP TABLE listings;");
+      db.exec("ALTER TABLE listings_new RENAME TO listings;");
+    })();
+    db.exec("PRAGMA foreign_keys = ON");
+    console.log("Listings migration successful.");
+  }
+} catch (e) {
+  console.error("Listings migration failed:", e);
+  db.exec("PRAGMA foreign_keys = ON");
+}
+
+// Migration for claims status constraint
+try {
+  let migrationNeeded = false;
+  try {
+    db.exec(`
+      INSERT INTO claims (id, listing_id, ngo_id, meals_claimed, status) 
+      VALUES (-999, 0, 0, 0, 'CANCELLED')
+    `);
+    db.exec("DELETE FROM claims WHERE id = -999");
+  } catch (err: any) {
+    if (err.message.includes("CHECK constraint failed")) {
+      migrationNeeded = true;
+    }
+  }
+
+  if (migrationNeeded) {
+    console.log("Migrating claims table to update status constraint...");
+    db.exec("PRAGMA foreign_keys = OFF");
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE claims_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          listing_id INTEGER NOT NULL,
+          ngo_id INTEGER NOT NULL,
+          meals_claimed INTEGER NOT NULL,
+          status TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN ('PENDING', 'COMPLETED', 'CANCELLED')),
+          pickup_time DATETIME,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (listing_id) REFERENCES listings(id),
+          FOREIGN KEY (ngo_id) REFERENCES users(id)
+        );
+      `);
+      
+      db.exec(`
+        INSERT INTO claims_new (id, listing_id, ngo_id, meals_claimed, status, pickup_time, created_at)
+        SELECT id, listing_id, ngo_id, meals_claimed, status, pickup_time, created_at FROM claims;
+      `);
+      
+      db.exec("DROP TABLE claims;");
+      db.exec("ALTER TABLE claims_new RENAME TO claims;");
+    })();
+    db.exec("PRAGMA foreign_keys = ON");
+    console.log("Claims migration successful.");
+  }
+} catch (e) {
+  console.error("Claims migration failed:", e);
+  db.exec("PRAGMA foreign_keys = ON");
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -289,8 +393,9 @@ async function startServer() {
 
   app.delete("/api/listings/:id", authenticate, (req: any, res) => {
     if (req.user.role !== 'restaurant') return res.status(403).json({ error: "Forbidden" });
+    const listingId = parseInt(req.params.id);
     const result = db.prepare("UPDATE listings SET status = 'REMOVED' WHERE id = ? AND restaurant_id = ? AND status IN ('ACTIVE', 'EDITED')")
-      .run(req.params.id, req.user.id);
+      .run(listingId, req.user.id);
     
     if (result.changes === 0) return res.status(400).json({ error: "Listing not found or already removed/expired" });
     res.json({ success: true });
@@ -298,10 +403,11 @@ async function startServer() {
 
   app.put("/api/listings/:id", authenticate, (req: any, res) => {
     if (req.user.role !== 'restaurant') return res.status(403).json({ error: "Forbidden" });
+    const listingId = parseInt(req.params.id);
     const { food_description, total_meals } = req.body;
     
     const tx = db.transaction(() => {
-      const listing: any = db.prepare("SELECT * FROM listings WHERE id = ? AND restaurant_id = ?").get(req.params.id, req.user.id);
+      const listing: any = db.prepare("SELECT * FROM listings WHERE id = ? AND restaurant_id = ?").get(listingId, req.user.id);
       if (!listing) throw new Error("Listing not found");
       if (listing.status !== 'ACTIVE' && listing.status !== 'EDITED') throw new Error("Cannot edit inactive listing");
 
@@ -316,7 +422,7 @@ async function startServer() {
         UPDATE listings 
         SET food_description = ?, total_meals = ?, meals_remaining = ?, status = 'EDITED'
         WHERE id = ?
-      `).run(food_description, total_meals, newMealsRemaining, req.params.id);
+      `).run(food_description, total_meals, newMealsRemaining, listingId);
 
       return true;
     });
@@ -379,6 +485,12 @@ async function startServer() {
 
   app.get("/api/listings/my", authenticate, (req: any, res) => {
     if (req.user.role !== 'restaurant') return res.status(403).json({ error: "Forbidden" });
+    
+    // Auto-expire logic consistency
+    const now = new Date().toISOString();
+    db.prepare("UPDATE listings SET status = 'EXPIRED' WHERE status IN ('ACTIVE', 'EDITED') AND expiry_time < ? AND restaurant_id = ?")
+      .run(now, req.user.id);
+
     const listings = db.prepare(`
       SELECT l.*, u.org_name as restaurant_name 
       FROM listings l 
@@ -439,34 +551,37 @@ async function startServer() {
   });
 
   app.get("/api/claims/listing/:id", authenticate, (req: any, res) => {
+    const listingId = parseInt(req.params.id);
     const claims = db.prepare(`
       SELECT c.*, u.org_name as ngo_name, u.contact as ngo_contact 
       FROM claims c 
       JOIN users u ON c.ngo_id = u.id 
       WHERE c.listing_id = ?
-    `).all(req.params.id);
+    `).all(listingId);
     res.json(claims);
   });
 
   app.post("/api/claims/:id/pickup", authenticate, (req: any, res) => {
     if (req.user.role !== 'ngo') return res.status(403).json({ error: "Forbidden" });
+    const claimId = parseInt(req.params.id);
     db.prepare("UPDATE claims SET status = 'COMPLETED', pickup_time = ? WHERE id = ? AND ngo_id = ? AND status = 'PENDING'")
-      .run(new Date().toISOString(), req.params.id, req.user.id);
+      .run(new Date().toISOString(), claimId, req.user.id);
     res.json({ success: true });
   });
 
   app.post("/api/claims/:id/cancel", authenticate, (req: any, res) => {
     if (req.user.role !== 'ngo') return res.status(403).json({ error: "Forbidden" });
+    const claimId = parseInt(req.params.id);
     
     const tx = db.transaction(() => {
-      const claim: any = db.prepare("SELECT * FROM claims WHERE id = ? AND ngo_id = ? AND status = 'PENDING'").get(req.params.id, req.user.id);
+      const claim: any = db.prepare("SELECT * FROM claims WHERE id = ? AND ngo_id = ? AND status = 'PENDING'").get(claimId, req.user.id);
       if (!claim) throw new Error("Claim not found or already picked up/cancelled");
 
       // Restore meals to listing
       db.prepare("UPDATE listings SET meals_remaining = meals_remaining + ? WHERE id = ?").run(claim.meals_claimed, claim.listing_id);
       
       // Update claim status
-      db.prepare("UPDATE claims SET status = 'CANCELLED' WHERE id = ?").run(req.params.id);
+      db.prepare("UPDATE claims SET status = 'CANCELLED' WHERE id = ?").run(claimId);
 
       return true;
     });
