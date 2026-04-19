@@ -6,7 +6,15 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatToIST(dateInput: string | number | Date, options: Intl.DateTimeFormatOptions = {}) {
-  const date = new Date(dateInput);
+  if (!dateInput) return '';
+  let date: Date;
+  if (typeof dateInput === 'string' && !dateInput.endsWith('Z') && !dateInput.includes('+')) {
+    // SQLite DATETIME strings (YYYY-MM-DD HH:MM:SS) need T and Z for UTC
+    date = new Date(dateInput.replace(' ', 'T') + 'Z');
+  } else {
+    date = new Date(dateInput);
+  }
+
   return new Intl.DateTimeFormat('en-IN', {
     timeZone: 'Asia/Kolkata',
     hour12: true,
@@ -17,7 +25,14 @@ export function formatToIST(dateInput: string | number | Date, options: Intl.Dat
 }
 
 export function formatDateTimeToIST(dateInput: string | number | Date) {
-  const date = new Date(dateInput);
+  if (!dateInput) return '';
+  let date: Date;
+  if (typeof dateInput === 'string' && !dateInput.endsWith('Z') && !dateInput.includes('+')) {
+    date = new Date(dateInput.replace(' ', 'T') + 'Z');
+  } else {
+    date = new Date(dateInput);
+  }
+
   return new Intl.DateTimeFormat('en-IN', {
     timeZone: 'Asia/Kolkata',
     year: 'numeric',
