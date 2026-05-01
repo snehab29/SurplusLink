@@ -29,6 +29,7 @@ db.exec(`
     zone TEXT NOT NULL,
     password_hash TEXT,
     role TEXT NOT NULL CHECK(role IN ('restaurant', 'ngo', 'admin')),
+    avatar_url TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -83,6 +84,10 @@ try {
 } catch (e) {}
 try {
   db.exec("ALTER TABLE users ADD COLUMN org_name TEXT");
+} catch (e) {}
+
+try {
+  db.exec("ALTER TABLE users ADD COLUMN avatar_url TEXT");
 } catch (e) {}
 try {
   db.exec("UPDATE users SET org_name = name WHERE org_name IS NULL");
@@ -200,7 +205,8 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: '5mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '5mb' }));
   app.use(cookieParser());
   app.use(cors());
 
@@ -308,7 +314,7 @@ async function startServer() {
     if (!token) return res.json(null);
     try {
       const decoded: any = jwt.verify(token, JWT_SECRET);
-      const user = db.prepare("SELECT id, name, org_name as orgName, contact, email, address, zone, role FROM users WHERE id = ?").get(decoded.id);
+      const user = db.prepare("SELECT id, name, org_name as orgName, contact, email, address, zone, role, avatar_url FROM users WHERE id = ?").get(decoded.id);
       if (!user) return res.json(null);
       res.json(user);
     } catch (err) {
@@ -317,7 +323,7 @@ async function startServer() {
   });
 
   app.put("/api/auth/me", authenticate, async (req: any, res) => {
-    const { name, orgName, contact, email, address, zone } = req.body;
+    const { name, orgName, contact, email, address, zone, avatar_url } = req.body;
     
     if (!name || !orgName || !address || !zone) {
       return res.status(400).json({ error: "Missing required fields: name, organization name, address, and zone are required." });
@@ -336,19 +342,19 @@ async function startServer() {
 
       db.prepare(`
         UPDATE users 
-        SET name = ?, org_name = ?, contact = ?, email = ?, address = ?, zone = ?
+        SET name = ?, org_name = ?, contact = ?, email = ?, address = ?, zone = ?, avatar_url = ?
         WHERE id = ?
-      `).run(name, orgName, contact, email, address, zone, req.user.id);
+      `).run(name, orgName, contact, email, address, zone, avatar_url, req.user.id);
 
       // Return updated user info (need to re-fetch to get correct fields)
-      const updatedUser: any = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.id);
+      const updatedUser: any = db.prepare("SELECT id, name, org_name as orgName, contact, email, address, zone, role, avatar_url FROM users WHERE id = ?").get(req.user.id);
       
       // Update token (optional, but good for local session if claims changed)
       const token = jwt.sign({ 
         id: updatedUser.id, 
         role: updatedUser.role, 
         name: updatedUser.name, 
-        orgName: updatedUser.org_name, 
+        orgName: updatedUser.orgName, 
         zone: updatedUser.zone 
       }, JWT_SECRET, { expiresIn: "24h" });
       
@@ -446,7 +452,7 @@ async function startServer() {
       
       // Use LEFT JOIN to ensure listings show up even if user data is missing (though it shouldn't be)
       let query = `
-        SELECT l.*, u.org_name as restaurant_name 
+        SELECT l.*, u.org_name as restaurant_name, u.avatar_url as restaurant_avatar 
         FROM listings l 
         LEFT JOIN users u ON l.restaurant_id = u.id 
         WHERE l.status IN ('ACTIVE', 'EDITED') AND l.meals_remaining > 0
@@ -492,7 +498,7 @@ async function startServer() {
       .run(now, req.user.id);
 
     const listings = db.prepare(`
-      SELECT l.*, u.org_name as restaurant_name 
+      SELECT l.*, u.org_name as restaurant_name, u.avatar_url as restaurant_avatar 
       FROM listings l 
       JOIN users u ON l.restaurant_id = u.id 
       WHERE l.restaurant_id = ? 

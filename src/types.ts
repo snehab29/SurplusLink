@@ -9,12 +9,14 @@ export interface User {
   address: string;
   zone: string;
   role: UserRole;
+  avatar_url?: string;
 }
 
 export interface Listing {
   id: number;
   restaurant_id: number;
   restaurant_name?: string;
+  restaurant_avatar?: string;
   zone: string;
   food_description: string;
   category: 'NORMAL' | 'BAKERY_SWEETS';

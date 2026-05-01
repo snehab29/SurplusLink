@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { cn } from '../lib/utils';
 import { ProfileMenu } from './ProfileMenu';
 import { NotificationCenter } from './NotificationCenter';
+import { ProfileNudge } from './ProfileNudge';
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -63,6 +64,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {children}
       </main>
+
+      <ProfileNudge />
 
       <footer className="bg-white border-t border-slate-200 py-8">
         <div className="max-w-7xl mx-auto px-4 text-center">

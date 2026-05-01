@@ -14,7 +14,8 @@ import {
   Save,
   Loader2,
   ChevronDown,
-  History
+  History,
+  Camera
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -51,8 +52,12 @@ export function ProfileMenu() {
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-slate-100 transition-colors group"
       >
-        <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-200 transition-colors">
-          <UserIcon size={20} />
+        <div className="w-9 h-9 rounded-lg overflow-hidden bg-emerald-100 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-200 transition-colors">
+          {user.avatar_url ? (
+            <img src={user.avatar_url} alt={user.orgName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+          ) : (
+            <UserIcon size={20} />
+          )}
         </div>
         <div className="hidden sm:block text-left">
           <div className="text-sm font-bold text-slate-900 leading-none">{user.orgName}</div>
@@ -71,8 +76,12 @@ export function ProfileMenu() {
           >
             <div className="p-5 border-b border-slate-100 bg-slate-50/50">
               <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-emerald-600 flex items-center justify-center text-white text-xl font-bold">
-                  {user.orgName.charAt(0)}
+                <div className="w-14 h-14 rounded-2xl overflow-hidden bg-emerald-600 flex items-center justify-center text-white text-xl font-bold">
+                  {user.avatar_url ? (
+                    <img src={user.avatar_url} alt={user.orgName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    user.orgName.charAt(0)
+                  )}
                 </div>
                 <div>
                   <h3 className="font-bold text-slate-900">{user.name}</h3>
@@ -112,6 +121,7 @@ export function ProfileMenu() {
                 {user.role === 'restaurant' ? 'Your Listings' : 'Your Claims'}
               </button>
               <button
+                data-action="edit-profile"
                 onClick={() => {
                   setIsEditing(true);
                   setIsOpen(false);
@@ -155,10 +165,27 @@ function EditProfileModal({ user, onClose, onUpdate }: { user: User, onClose: ()
     email: user.email || '',
     contact: user.contact || '',
     address: user.address,
-    zone: user.zone
+    zone: user.zone,
+    avatar_url: user.avatar_url || ''
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 1024 * 1024) { // 1MB limit for safety with Base64
+        setError('Image is too large. Please select an image under 1MB.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData(prev => ({ ...prev, avatar_url: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -204,12 +231,60 @@ function EditProfileModal({ user, onClose, onUpdate }: { user: User, onClose: ()
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
           {error && (
             <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-sm font-medium rounded-xl">
               {error}
             </div>
           )}
+
+          <div className="flex justify-center pb-2">
+            <div className="relative group">
+              <div 
+                onClick={() => fileInputRef.current?.click()}
+                className="w-24 h-24 rounded-3xl bg-slate-100 border-2 border-slate-200 overflow-hidden flex items-center justify-center cursor-pointer hover:border-emerald-500 transition-all relative"
+              >
+                {formData.avatar_url ? (
+                  <img src={formData.avatar_url} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="flex flex-col items-center gap-1 text-slate-400">
+                    <Camera size={24} />
+                    <span className="text-[10px] font-bold uppercase">Click to Upload</span>
+                  </div>
+                )}
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Camera size={24} className="text-white" />
+                </div>
+              </div>
+              <input 
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept="image/*"
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute -bottom-2 -right-2 p-2 bg-emerald-600 text-white rounded-xl shadow-lg border-2 border-white hover:bg-emerald-700 transition-colors"
+                title="Upload from device"
+              >
+                <Camera size={14} />
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-500 uppercase px-1">Profile Image URL</label>
+            <input
+              type="url"
+              placeholder="https://images.unsplash.com/photo-..."
+              value={formData.avatar_url}
+              onChange={e => setFormData({ ...formData, avatar_url: e.target.value })}
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+            />
+            <p className="text-[10px] text-slate-400 px-1 italic">Provide a link to your organization's logo or profile picture.</p>
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
