@@ -5,6 +5,7 @@ import { Auth } from './components/Auth';
 import { RestaurantDashboard } from './components/RestaurantDashboard';
 import { NGODashboard } from './components/NGODashboard';
 import { AdminDashboard } from './components/AdminDashboard';
+import { ResetPassword } from './components/ResetPassword';
 import { Loader2 } from 'lucide-react';
 
 import { apiFetch } from './lib/api';
@@ -26,8 +27,13 @@ export const useAuth = () => {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [resetToken, setResetToken] = useState<string | null>(null);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    if (token) setResetToken(token);
+
     apiFetch('/api/auth/me')
       .then(res => res.json())
       .then(data => {
@@ -48,7 +54,15 @@ export default function App() {
 
   return (
     <AuthContext.Provider value={{ user, setUser, loading }}>
-      {!user ? (
+      {resetToken ? (
+        <ResetPassword 
+          token={resetToken} 
+          onComplete={() => {
+            setResetToken(null);
+            window.history.replaceState({}, '', '/');
+          }} 
+        />
+      ) : !user ? (
         <Auth />
       ) : (
         <Layout>

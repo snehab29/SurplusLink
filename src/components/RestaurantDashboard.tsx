@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Listing, Claim } from '../types';
-import { Plus, Clock, CheckCircle2, AlertCircle, ChevronRight, Loader2, Utensils, Trash2, Edit3, Save, X as CloseIcon } from 'lucide-react';
+import { Plus, Clock, CheckCircle2, AlertCircle, ChevronRight, Loader2, Utensils, Trash2, Edit3, Save, X as CloseIcon, Phone, Copy, Check } from 'lucide-react';
 import { ListingCard } from './ListingCard';
 import { motion, AnimatePresence } from 'motion/react';
 import { apiFetch } from '../lib/api';
@@ -180,6 +180,24 @@ export function RestaurantDashboard() {
       setListings(lastListings); // Rollback
       alert("Network error. Could not remove listing.");
     }
+  };
+
+  const CopyButton = ({ text }: { text: string }) => {
+    const [copied, setCopied] = useState(false);
+    const copy = () => {
+      navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    };
+    return (
+      <button 
+        onClick={copy}
+        className="p-1 hover:bg-slate-200 rounded-md transition-colors text-slate-400 hover:text-emerald-600"
+        title="Copy to clipboard"
+      >
+        {copied ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+      </button>
+    );
   };
 
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-emerald-600" /></div>;
@@ -490,7 +508,11 @@ export function RestaurantDashboard() {
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <div className="font-bold text-slate-900">{claim.ngo_name}</div>
-                        <div className="text-xs text-slate-500">{claim.ngo_contact}</div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <Phone size={10} className="text-slate-400" />
+                          <div className="text-xs text-slate-500 font-medium">{claim.ngo_contact}</div>
+                          <CopyButton text={claim.ngo_contact || ''} />
+                        </div>
                       </div>
                       <div className="text-right">
                         <div className="text-lg font-black text-emerald-600">{claim.meals_claimed}</div>

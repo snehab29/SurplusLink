@@ -8,6 +8,8 @@ import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import dotenv from "dotenv";
+import crypto from "crypto";
+import nodemailer from "nodemailer";
 
 dotenv.config();
 
@@ -16,6 +18,17 @@ const __dirname = path.dirname(__filename);
 
 const db = new Database("surpluslink.db");
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key";
+
+// Email Transporter
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || "smtp.ethereal.email",
+  port: parseInt(process.env.SMTP_PORT || "587"),
+  secure: process.env.SMTP_PORT === "465",
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
 
 // Initialize Database
 db.exec(`
@@ -30,6 +43,8 @@ db.exec(`
     password_hash TEXT,
     role TEXT NOT NULL CHECK(role IN ('restaurant', 'ngo', 'admin')),
     avatar_url TEXT,
+    reset_token TEXT,
+    reset_token_expiry DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -88,6 +103,12 @@ try {
 
 try {
   db.exec("ALTER TABLE users ADD COLUMN avatar_url TEXT");
+} catch (e) {}
+try {
+  db.exec("ALTER TABLE users ADD COLUMN reset_token TEXT");
+} catch (e) {}
+try {
+  db.exec("ALTER TABLE users ADD COLUMN reset_token_expiry DATETIME");
 } catch (e) {}
 try {
   db.exec("UPDATE users SET org_name = name WHERE org_name IS NULL");
@@ -233,9 +254,26 @@ async function startServer() {
   // --- API Routes ---
 
   // Auth
+  const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const PHONE_REGEX = /^[1-9][0-9]{9}$/;
+
   app.post("/api/auth/register", async (req, res) => {
     const { name, orgName, contact, email, address, zone, password, role } = req.body;
     try {
+      // 0. Validate password length
+      if (password && password.length < 6) {
+        return res.status(400).json({ error: "Password must be at least 6 characters long." });
+      }
+
+      // 0.1 Validate phone number format
+      if (contact && !PHONE_REGEX.test(contact)) {
+        return res.status(400).json({ error: "Invalid phone number. Must be exactly 10 digits and cannot start with 0." });
+      }
+
+      // 1. Validate email format
+      if (email && !EMAIL_REGEX.test(email)) {
+        return res.status(400).json({ error: "Invalid email format. Please use example@domain.com" });
+      }
       // 1. Check if email already exists
       if (email) {
         const existingEmail = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
@@ -272,6 +310,11 @@ async function startServer() {
 
   app.post("/api/auth/login", async (req, res) => {
     const { contact, email, password } = req.body;
+
+    if (email && !EMAIL_REGEX.test(email)) {
+      return res.status(400).json({ error: "Invalid email format" });
+    }
+
     let user: any;
     if (contact) {
       user = db.prepare("SELECT * FROM users WHERE contact = ?").get(contact);
@@ -282,14 +325,33 @@ async function startServer() {
     if (!user || !user.password_hash || !(await bcrypt.compare(password, user.password_hash))) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
-    const token = jwt.sign({ id: user.id, role: user.role, name: user.name, orgName: user.org_name, zone: user.zone }, JWT_SECRET, { expiresIn: "24h" });
+    const token = jwt.sign({ 
+      id: user.id, 
+      role: user.role, 
+      name: user.name, 
+      orgName: user.org_name, 
+      zone: user.zone 
+    }, JWT_SECRET, { expiresIn: "24h" });
+    
     res.cookie("token", token, { 
       httpOnly: true, 
       sameSite: "none", 
       secure: true,
       path: '/'
     });
-    res.json({ id: user.id, role: user.role, name: user.name, orgName: user.org_name, zone: user.zone, token });
+    
+    res.json({ 
+      id: user.id, 
+      role: user.role, 
+      name: user.name, 
+      orgName: user.org_name, 
+      zone: user.zone,
+      email: user.email,
+      contact: user.contact,
+      address: user.address,
+      avatar_url: user.avatar_url,
+      token 
+    });
   });
 
   app.post("/api/auth/logout", (req, res) => {
@@ -323,13 +385,36 @@ async function startServer() {
   });
 
   app.put("/api/auth/me", authenticate, async (req: any, res) => {
-    const { name, orgName, contact, email, address, zone, avatar_url } = req.body;
+    const { name, orgName, contact, email, address, zone, avatar_url, currentPassword, newPassword } = req.body;
     
+    if (email && !EMAIL_REGEX.test(email)) {
+      return res.status(400).json({ error: "Invalid email format. Please use example@domain.com" });
+    }
+
+    if (contact && !PHONE_REGEX.test(contact)) {
+      return res.status(400).json({ error: "Invalid phone number. Must be exactly 10 digits and cannot start with 0." });
+    }
+
     if (!name || !orgName || !address || !zone) {
       return res.status(400).json({ error: "Missing required fields: name, organization name, address, and zone are required." });
     }
 
     try {
+      // If changing password, verify current password
+      if (newPassword) {
+        if (newPassword.length < 6) {
+          return res.status(400).json({ error: "New password must be at least 6 characters long." });
+        }
+        if (!currentPassword) {
+          return res.status(400).json({ error: "Current password is required to set a new one." });
+        }
+        const user: any = db.prepare("SELECT password_hash FROM users WHERE id = ?").get(req.user.id);
+        const isMatch = await bcrypt.compare(currentPassword, user.password_hash);
+        if (!isMatch) {
+          return res.status(400).json({ error: "Incorrect current password." });
+        }
+      }
+
       // Check for unique constraints if they changed
       if (email) {
         const existingEmail = db.prepare("SELECT id FROM users WHERE email = ? AND id != ?").get(email, req.user.id);
@@ -340,16 +425,37 @@ async function startServer() {
         if (existingContact) return res.status(400).json({ error: "Contact number already taken by another user" });
       }
 
-      db.prepare(`
-        UPDATE users 
-        SET name = ?, org_name = ?, contact = ?, email = ?, address = ?, zone = ?, avatar_url = ?
-        WHERE id = ?
-      `).run(name, orgName, contact, email, address, zone, avatar_url, req.user.id);
+      let passwordHash: string | null = null;
+      if (newPassword) {
+        // Enforce unique password requirement if new password provided
+        const allHashes = db.prepare("SELECT password_hash FROM users WHERE password_hash IS NOT NULL").all() as { password_hash: string }[];
+        for (const { password_hash } of allHashes) {
+          const isMatch = await bcrypt.compare(newPassword, password_hash);
+          if (isMatch) {
+            return res.status(400).json({ error: "This password has already been used by another user. Please choose a unique password for security." });
+          }
+        }
+        passwordHash = await bcrypt.hash(newPassword, 10);
+      }
+
+      const tx = db.transaction(() => {
+        db.prepare(`
+          UPDATE users 
+          SET name = ?, org_name = ?, contact = ?, email = ?, address = ?, zone = ?, avatar_url = ?
+          WHERE id = ?
+        `).run(name, orgName, contact, email, address, zone, avatar_url, req.user.id);
+
+        if (passwordHash) {
+          db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(passwordHash, req.user.id);
+        }
+      });
+      
+      tx();
 
       // Return updated user info (need to re-fetch to get correct fields)
       const updatedUser: any = db.prepare("SELECT id, name, org_name as orgName, contact, email, address, zone, role, avatar_url FROM users WHERE id = ?").get(req.user.id);
       
-      // Update token (optional, but good for local session if claims changed)
+      // Update token
       const token = jwt.sign({ 
         id: updatedUser.id, 
         role: updatedUser.role, 
@@ -369,16 +475,99 @@ async function startServer() {
         id: updatedUser.id, 
         role: updatedUser.role, 
         name: updatedUser.name, 
-        orgName: updatedUser.org_name, 
+        orgName: updatedUser.orgName, 
         zone: updatedUser.zone,
         contact: updatedUser.contact,
         email: updatedUser.email,
         address: updatedUser.address,
+        avatar_url: updatedUser.avatar_url,
         token 
       });
     } catch (err: any) {
+      console.error("Profile update error:", err);
       res.status(400).json({ error: err.message });
     }
+  });
+
+  app.post("/api/auth/forgot-password", async (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Email is required" });
+    
+    if (!EMAIL_REGEX.test(email)) {
+      return res.status(400).json({ error: "Invalid email format" });
+    }
+
+    const user: any = db.prepare("SELECT id, name FROM users WHERE email = ?").get(email);
+    
+    // Safety message (don't reveal if user exists)
+    const safetyMessage = { message: "If an account with that email exists, we have sent a reset link. Please check your inbox (and spam folder)." };
+
+    if (!user) {
+      return res.json(safetyMessage);
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiry = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 mins
+
+    db.prepare("UPDATE users SET reset_token = ?, reset_token_expiry = ? WHERE id = ?")
+      .run(token, expiry, user.id);
+
+    const appUrl = process.env.APP_URL || `http://${req.headers.host}`;
+    const resetLink = `${appUrl}/reset-password?token=${token}`;
+
+    try {
+      await transporter.sendMail({
+        from: process.env.SMTP_FROM || 'SurplusLink <noreply@surpluslink.com>',
+        to: email,
+        subject: 'Password Reset Request - SurplusLink',
+        html: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; rounded: 12px;">
+            <h2 style="color: #059669;">Reset Your Password</h2>
+            <p>Hello ${user.name},</p>
+            <p>We received a request to reset your password for your SurplusLink account. If you didn't request this, you can safely ignore this email.</p>
+            <p>To reset your password, please click the button below within the next 30 minutes:</p>
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${resetLink}" style="background-color: #059669; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Reset Password</a>
+            </div>
+            <p style="font-size: 0.875rem; color: #64748b;">Or copy and paste this link in your browser:</p>
+            <p style="font-size: 0.875rem; color: #64748b; word-break: break-all;">${resetLink}</p>
+            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 30px 0;">
+            <p style="font-size: 0.75rem; color: #94a3b8; text-align: center;">&copy; 2026 SurplusLink. Better food, less waste.</p>
+          </div>
+        `
+      });
+      console.log(`Reset email sent to ${email}`);
+    } catch (error) {
+      console.error("Failed to send reset email:", error);
+      // We still return success to prevent user enumeration
+    }
+    
+    res.json(safetyMessage);
+  });
+
+  app.post("/api/auth/reset-password", async (req, res) => {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) return res.status(400).json({ error: "Token and new password required" });
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters long." });
+    }
+
+    const user: any = db.prepare("SELECT id FROM users WHERE reset_token = ? AND reset_token_expiry > ?")
+      .get(token, new Date().toISOString());
+
+    if (!user) {
+      return res.status(400).json({ error: "Invalid or expired reset token. Please request a new one." });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    
+    db.transaction(() => {
+      db.prepare("UPDATE users SET password_hash = ?, reset_token = NULL, reset_token_expiry = NULL WHERE id = ?")
+        .run(passwordHash, user.id);
+    })();
+
+    res.json({ success: true, message: "Password updated successfully. You can now log in with your new password." });
   });
 
   // Listings
@@ -546,7 +735,7 @@ async function startServer() {
   app.get("/api/claims/my", authenticate, (req: any, res) => {
     if (req.user.role !== 'ngo') return res.status(403).json({ error: "Forbidden" });
     const claims = db.prepare(`
-      SELECT c.*, l.food_description, l.zone, u.org_name as restaurant_name 
+      SELECT c.*, l.food_description, l.zone, u.org_name as restaurant_name, u.contact as restaurant_contact 
       FROM claims c 
       JOIN listings l ON c.listing_id = l.id 
       JOIN users u ON l.restaurant_id = u.id 

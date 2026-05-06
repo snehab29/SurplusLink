@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Listing, Claim, ZONES } from '../types';
-import { Search, Filter, Clock, CheckCircle2, Loader2, Heart, MapPin, Utensils, AlertCircle } from 'lucide-react';
+import { Search, Filter, Clock, CheckCircle2, Loader2, Heart, MapPin, Utensils, AlertCircle, Phone, Copy, Check } from 'lucide-react';
 import { ListingCard } from './ListingCard';
 import { motion, AnimatePresence } from 'motion/react';
 import { apiFetch } from '../lib/api';
@@ -112,6 +112,24 @@ export function NGODashboard() {
     }
   };
 
+  const CopyButton = ({ text }: { text: string }) => {
+    const [copied, setCopied] = useState(false);
+    const copy = () => {
+      navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    };
+    return (
+      <button 
+        onClick={copy}
+        className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-emerald-600"
+        title="Copy to clipboard"
+      >
+        {copied ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+      </button>
+    );
+  };
+
   if (loading && listings.length === 0) return <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-emerald-600" /></div>;
 
   return (
@@ -216,6 +234,22 @@ export function NGODashboard() {
                   </div>
                 </div>
                 <p className="text-slate-600 text-sm mb-4 italic">"{claim.food_description}"</p>
+                
+                {claim.restaurant_contact && (
+                  <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl mb-4 border border-slate-100">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-emerald-600 shadow-sm">
+                        <Phone size={14} />
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Contact Partner</div>
+                        <div className="text-sm font-bold text-slate-700">{claim.restaurant_contact}</div>
+                      </div>
+                    </div>
+                    <CopyButton text={claim.restaurant_contact} />
+                  </div>
+                )}
+
                 <div className="flex items-center gap-2 text-xs text-slate-500 mb-6">
                   <Clock className="w-3.5 h-3.5" />
                   Claimed: {formatDateTimeToIST(claim.created_at)}

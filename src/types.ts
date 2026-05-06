@@ -41,6 +41,7 @@ export interface Claim {
   food_description?: string;
   zone?: string;
   restaurant_name?: string;
+  restaurant_contact?: string;
 }
 
 export interface Notification {

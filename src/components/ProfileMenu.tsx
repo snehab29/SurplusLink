@@ -15,7 +15,10 @@ import {
   Loader2,
   ChevronDown,
   History,
-  Camera
+  Camera,
+  Lock,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -166,7 +169,15 @@ function EditProfileModal({ user, onClose, onUpdate }: { user: User, onClose: ()
     contact: user.contact || '',
     address: user.address,
     zone: user.zone,
-    avatar_url: user.avatar_url || ''
+    avatar_url: user.avatar_url || '',
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [showPasswords, setShowPasswords] = useState({
+    current: false,
+    new: false,
+    confirm: false
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -189,6 +200,35 @@ function EditProfileModal({ user, onClose, onUpdate }: { user: User, onClose: ()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
+
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const PHONE_REGEX = /^[1-9][0-9]{9}$/;
+    if (formData.email && !EMAIL_REGEX.test(formData.email)) {
+      setError('Invalid email format. Please use example@domain.com');
+      return;
+    }
+
+    if (formData.contact && !PHONE_REGEX.test(formData.contact)) {
+      setError('Invalid phone number. Must be 10 digits and not start with 0.');
+      return;
+    }
+    
+    if (formData.newPassword) {
+      if (formData.newPassword.length < 6) {
+        setError('New password must be at least 6 characters');
+        return;
+      }
+      if (formData.newPassword !== formData.confirmPassword) {
+        setError('New passwords do not match');
+        return;
+      }
+      if (!formData.currentPassword) {
+        setError('Current password is required to change password');
+        return;
+      }
+    }
+
     setLoading(true);
     setError('');
 
@@ -332,15 +372,92 @@ function EditProfileModal({ user, onClose, onUpdate }: { user: User, onClose: ()
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 uppercase px-1">Zone</label>
-            <select
-              value={formData.zone}
-              onChange={e => setFormData({ ...formData, zone: e.target.value })}
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all appearance-none"
-            >
-              {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
-            </select>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase px-1">Zone</label>
+              <select
+                value={formData.zone}
+                onChange={e => setFormData({ ...formData, zone: e.target.value })}
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all appearance-none"
+              >
+                {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1.5 col-span-2">
+              <div className="flex items-center justify-between px-1">
+                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
+                  <Lock size={12} />
+                  Change Password
+                </label>
+                {(formData.newPassword || formData.confirmPassword) && (
+                  <span className="text-[10px] font-bold text-amber-600 uppercase">Verification Required</span>
+                )}
+              </div>
+              
+              <div className="space-y-3">
+                <div className="relative">
+                  <input
+                    type={showPasswords.current ? "text" : "password"}
+                    placeholder="Current password"
+                    required={!!(formData.newPassword || formData.confirmPassword)}
+                    value={formData.currentPassword}
+                    onChange={e => setFormData({ ...formData, currentPassword: e.target.value })}
+                    className={cn(
+                      "w-full px-4 py-3 pr-11 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 outline-none transition-all",
+                      (formData.newPassword || formData.confirmPassword) ? "focus:ring-amber-500 border-amber-200" : "focus:ring-emerald-500"
+                    )}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswords(prev => ({ ...prev, current: !prev.current }))}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    {showPasswords.current ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="relative">
+                    <input
+                      type={showPasswords.new ? "text" : "password"}
+                      placeholder="New password"
+                      value={formData.newPassword}
+                      onChange={e => setFormData({ ...formData, newPassword: e.target.value })}
+                      className="w-full px-4 py-3 pr-11 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswords(prev => ({ ...prev, new: !prev.new }))}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      {showPasswords.new ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showPasswords.confirm ? "text" : "password"}
+                      placeholder="Confirm new password"
+                      value={formData.confirmPassword}
+                      onChange={e => setFormData({ ...formData, confirmPassword: e.target.value })}
+                      className="w-full px-4 py-3 pr-11 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswords(prev => ({ ...prev, confirm: !prev.confirm }))}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      {showPasswords.confirm ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {(formData.newPassword || formData.confirmPassword) && (
+                <p className="text-[10px] text-slate-400 px-1 mt-1">
+                  Please enter your current password and match the new password to confirm.
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="space-y-1.5">
